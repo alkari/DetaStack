@@ -1,0 +1,300 @@
+# Install OpenStack Grizzly on Ubuntu 12.04 LTS
+#
+# Compute Node setup steps on a Cloud based VM with:
+# 4GB RAM, 2CPU
+# eth0 - Public Interface [192.237.167.197]
+# eth1 - Private Interface [10.208.148.93]
+# /dev/xvda [150GB]
+# /dev/xvdb [100GB]
+#
+# bugtrack al.kari@detacloud.com || @detacloud
+# 2013-08-13
+
+# Check if nested virtualization is supported. Use qemu if not.
+apt-get install -y cpu-checker
+kvm-ok
+
+egrep -c '(vmx|svm)' /proc/cpuinfo
+
+# use qemu if 0, else use kvm
+# nova-compute-kvm requires that your CPU supports hardware-assisted virtualization (HVM) such as Intel VT-x or AMD-V. If your CPU does not support this, or if you are already running in a virtualized environment, you can instead use the nova-compute-qemu package. This package provides software-based virtualization.
+
+
+# Replace the following credentials for production install:
+# ADMIN
+# MyProject
+# myuser / mypassword
+# myadmin / mypassword
+# notquantum
+
+# 1- login
+sudo su
+
+# 2 - Configure networking
+
+sudo sed -i "s/#net.ipv4.conf.default.rp_filter=1/net.ipv4.conf.default.rp_filter=0/g" /etc/sysctl.conf
+sudo sed -i "s/#net.ipv4.conf.all.rp_filter=1/net.ipv4.conf.all.rp_filter=0/g" /etc/sysctl.conf
+
+sysctl -p
+service networking restart
+
+# Store Controller IP address
+CONT_IP=10.208.143.46
+
+# Set hostname
+sudo hostname nova1
+echo nova1 > /etc/hostname
+
+# Replace 'ubuntu' below with existing host name
+sudo sed -i 's/ubuntu/nova1/g' /etc/hosts
+
+# 3 - Install supporting packages
+apt-get -y install openssh-server curl ntp
+
+# 4 - Synchronize time with controller
+sudo ntpdate -u $CONT_IP 
+echo 'server $CONT_IP' >> /etc/ntp.conf
+service ntp restart
+
+# Add a user
+adduser mystack
+# Enter: mypassword
+apt-get install sudo -y
+echo "mystack ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+
+# Reboot
+sudo shutdown -r now
+
+# LOGIN WITH NEW USER: mystack/mypassword
+
+sudo su
+
+# Verify network configurations
+ip a
+
+# Store Controller IP address
+CONT_IP=10.208.143.46
+
+# Store Public IP Address
+LOCAL_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+
+# Store Private IP Address 
+MY_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+
+# Create the 'user' and 'admin' credentials
+mkdir ~/credentials
+
+cat >> ~/credentials/user <<EOF
+export OS_USERNAME=myuser
+export OS_PASSWORD=mypassword
+export OS_TENANT_NAME=MyProject
+export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_REGION_NAME=RegionOne
+export OS_NO_CACHE=1
+EOF
+
+cat >> ~/credentials/admin <<EOF
+export OS_USERNAME=myadmin
+export OS_PASSWORD=mypassword
+export OS_TENANT_NAME=MyProject
+export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_REGION_NAME=RegionOne
+export OS_NO_CACHE=1
+EOF
+
+
+# 5- Enable the Cloud Archive repository
+cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
+deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/grizzly main
+EOF
+
+apt-get install ubuntu-cloud-keyring
+
+# 6 - Update all
+apt-get update -y && apt-get upgrade -y
+
+
+####################################################################################
+####################################################################################
+#				Compute Service (Nova)
+####################################################################################
+####################################################################################
+
+
+# Install the compute service (nova) [S L O W]
+sudo apt-get install -y nova-compute-qemu
+
+# Configure nova
+cat <<EOF | sudo tee -a /etc/nova/nova.conf
+compute_driver=libvirt.LibvirtDriver
+libvirt_type=qemu
+rabbit_host=$CONT_IP
+libvirt_use_virtio_for_bridges=True
+network_api_class=nova.network.quantumv2.api.API
+quantum_url=http://$CONT_IP:9696
+quantum_auth_strategy=keystone
+quantum_admin_tenant_name=Services
+quantum_admin_username=quantum
+quantum_admin_password=notquantum
+quantum_admin_auth_url=http://$CONT_IP:35357/v2.0
+firewall_driver=nova.virt.firewall.NoopFirewallDriver
+security_group_api=quantum
+sql_connection=mysql://nova:notnova@$CONT_IP/nova
+auth_strategy=keystone
+force_config_drive=True
+volume_api_class=nova.volume.cinder.API
+glance_api_servers=$CONT_IP:9292
+image_service=nova.image.glance.GlanceImageService
+my_ip=$MY_IP
+EOF
+
+# Disable verbose logging
+sudo sed -i 's/verbose=True/verbose=False/g' /etc/nova/nova.conf
+
+# Configure nova to use keystone
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $CONT_IP/g" /etc/nova/api-paste.ini
+sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/nova/api-paste.ini
+sudo sed -i 's/%SERVICE_USER%/nova/g' /etc/nova/api-paste.ini
+sudo sed -i 's/%SERVICE_PASSWORD%/notnova/g' /etc/nova/api-paste.ini
+
+# Configure nova for VNC
+( cat | sudo tee -a /etc/nova/nova.conf ) <<EOF
+novncproxy_base_url=http://$MY_IP:6080/vnc_auto.html ######## pub_ip of controller
+vncserver_proxyclient_address=$MY_IP
+vncserver_listen=0.0.0.0
+novnc_enable=true
+EOF
+
+
+# Restart nova services
+sudo service nova-compute restart
+
+nova-manage db sync
+
+# Verify nova services successfully restarted
+pgrep -l nova
+
+# Verify nova services are functioning and checking in :-)
+sudo nova-manage service list
+
+
+
+
+
+
+
+####################################################################################
+####################################################################################
+#				Networking service (Neutron[Quantum])
+####################################################################################
+####################################################################################
+
+
+# Install dependencies
+sudo apt-get install -y openvswitch-switch
+
+
+# Install the network service (quantum) agent
+sudo apt-get install -y quantum-plugin-openvswitch-agent
+
+# Configure the quantum OVS plugin
+sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connection = mysql://quantum:notquantum@$CONT_IP/quantum|g"  /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i 's/# Default: enable_tunneling = False/enable_tunneling = True/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i 's/# Example: tenant_network_type = gre/tenant_network_type = gre/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i 's/# Example: tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s/# Default: local_ip =/local_ip = $MY_IP/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+
+# Configure the quantum service to use keystone
+sudo sed -i 's/# rabbit_host = localhost/rabbit_host = $CONT_IP/g' /etc/quantum/quantum.conf
+sudo sed -i 's/# auth_strategy = keystone/auth_strategy = keystone/g' /etc/quantum/quantum.conf
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $CONT_IP/g" /etc/quantum/quantum.conf
+sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/quantum/quantum.conf
+sudo sed -i 's/%SERVICE_USER%/quantum/g' /etc/quantum/quantum.conf
+sudo sed -i 's/%SERVICE_PASSWORD%/notquantum/g' /etc/quantum/quantum.conf
+
+# Start Open vSwitch
+sudo service openvswitch-switch restart
+
+# Create the integration bridge
+sudo ovs-vsctl add-br br-int
+
+# Restart the quantum service agent
+sudo service quantum-plugin-openvswitch-agent restart
+
+# Use the 'admin' credentials
+source ~/credentials/admin
+
+
+nova hypervisor-list
+
+
+
+
+
+
+# Use the 'user' credentials
+source ~/credentials/user
+
+# List images
+nova image-list
+
+# List flavors
+nova flavor-list
+
+# Boot an instance using flavor and image names (if names are unique)
+nova boot --image cirros-qcow2 --flavor m1.tiny MyFirstInstance
+
+# Boot an instance using flavor and image IDs
+nova boot --image $IMAGE_ID_2 --flavor 1 MySecondInstance
+
+# List instances, notice status of instance
+nova list
+
+# Show details of instance
+nova show MyFirstInstance
+
+# View console log of instance
+nova console-log MyFirstInstance
+
+# Get network namespace (ie, qdhcp-5ab46e23-118a-4cad-9ca8-51d56a5b6b8c)
+sudo ip netns
+NETNS_ID=qdhcp-$PRIVATE_NET_ID
+
+# Ping first instance after status is active
+sudo ip netns exec $NETNS_ID ping -c 3 10.10.20.3
+
+# Log into first instance ( username is 'cirros', password is 'cubswin:)' )
+sudo ip netns exec $NETNS_ID ssh cirros@10.10.20.3
+
+# If you get a 'REMOTE HOST IDENTIFICATION HAS CHANGED' warning from previous command
+sudo ssh-keygen -f "/root/.ssh/known_hosts" -R 10.10.20.3
+
+# Ping second instance from first instance
+ping -c 3 10.10.20.4
+
+# Log into second instance from first instance ( username is 'cirros', password is 'cubswin:)' )
+ssh cirros@10.10.20.4
+
+# Log out of second instance
+exit
+
+# Log out of first instance
+exit
+
+# Use virsh to talk directly to libvirt
+sudo virsh list --all
+
+# Delete instances
+nova delete MyFirstInstance
+nova delete MySecondInstance
+
+# List instances, notice status of instance
+nova list
+
+cat >> ~/.bashrc <<EOF
+export NETNS_ID=$NETNS_ID
+EOF
+
+
