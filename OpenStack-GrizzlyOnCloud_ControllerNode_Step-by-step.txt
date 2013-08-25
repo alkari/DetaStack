@@ -8,7 +8,7 @@
 # /dev/xvdb [100GB] (Cinder Logical Volume]
 #
 # bugtrack al.kari@detacloud.com || @detacloud
-# 2013-08-13
+# 2013-08-25
 
 # Check if nested virtualization is supported. Use qemu if not.
 apt-get install -y cpu-checker
@@ -69,10 +69,10 @@ sudo shutdown -r now
 sudo su
 
 # Store Public IP Address
-LOCAL_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
 
 # Store Private IP Address 
-MY_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
 
 # 5- Enable the Cloud Archive repository
 cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
@@ -124,12 +124,12 @@ sudo dpkg -p keystone | grep "Version:"
 # Create a database for keystone
 sudo mysql -u root -pnotmysql -e "CREATE DATABASE keystone;"
 sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'notkeystone';"
-sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'$MY_IP' IDENTIFIED BY 'notkeystone';"
+sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'$PRIVATE_IP' IDENTIFIED BY 'notkeystone';"
 sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'notkeystone';"
 
 
 # Configure keystone to use MySQL
-sudo sed -i "s|connection = sqlite:////var/lib/keystone/keystone.db|connection = mysql://keystone:notkeystone@$MY_IP/keystone|g" /etc/keystone/keystone.conf
+sudo sed -i "s|connection = sqlite:////var/lib/keystone/keystone.db|connection = mysql://keystone:notkeystone@$PRIVATE_IP/keystone|g" /etc/keystone/keystone.conf
 
 # Restart keystone service
 sudo service keystone restart
@@ -142,7 +142,7 @@ sudo -u keystone keystone-manage db_sync
 
 # Export the keystone "admin" credentials to add the first users
 export SERVICE_TOKEN=ADMIN
-export SERVICE_ENDPOINT=http://$MY_IP:35357/v2.0
+export SERVICE_ENDPOINT=http://$PRIVATE_IP:35357/v2.0
 
 # Create new tenants (The services tenant will be used later when configuring services to use keystone)
 TENANT_ID=`keystone tenant-create --name MyProject | awk '/ id / { print $4 }'`
@@ -180,11 +180,11 @@ CINDER_SVC_ID=`keystone service-create --name=cinder --type=volume --description
 keystone service-list
 
 # Populate the endpoints in the service catalog
-keystone endpoint-create --region RegionOne --service-id=$KEYSTONE_SVC_ID --publicurl=http://$MY_IP:5000/v2.0 --internalurl=http://$MY_IP:5000/v2.0 --adminurl=http://$MY_IP:35357/v2.0
-keystone endpoint-create --region RegionOne --service-id=$GLANCE_SVC_ID --publicurl=http://$MY_IP:9292/v1 --internalurl=http://$MY_IP:9292/v1 --adminurl=http://$MY_IP:9292/v1
-keystone endpoint-create --region RegionOne --service-id=$QUANTUM_SVC_ID --publicurl=http://$MY_IP:9696/ --internalurl=http://$MY_IP:9696/ --adminurl=http://$MY_IP:9696/
-keystone endpoint-create --region RegionOne --service-id=$NOVA_SVC_ID --publicurl="http://$MY_IP:8774/v2/%(tenant_id)s" --internalurl="http://$MY_IP:8774/v2/%(tenant_id)s" --adminurl="http://$MY_IP:8774/v2/%(tenant_id)s"
-keystone endpoint-create --region RegionOne --service-id=$CINDER_SVC_ID --publicurl="http://$MY_IP:8776/v1/%(tenant_id)s" --internalurl="http://$MY_IP:8776/v1/%(tenant_id)s" --adminurl="http://$MY_IP:8776/v1/%(tenant_id)s"
+keystone endpoint-create --region RegionOne --service-id=$KEYSTONE_SVC_ID --publicurl=http://$PRIVATE_IP:5000/v2.0 --internalurl=http://$PRIVATE_IP:5000/v2.0 --adminurl=http://$PRIVATE_IP:35357/v2.0
+keystone endpoint-create --region RegionOne --service-id=$GLANCE_SVC_ID --publicurl=http://$PRIVATE_IP:9292/v1 --internalurl=http://$PRIVATE_IP:9292/v1 --adminurl=http://$PRIVATE_IP:9292/v1
+keystone endpoint-create --region RegionOne --service-id=$QUANTUM_SVC_ID --publicurl=http://$PRIVATE_IP:9696/ --internalurl=http://$PRIVATE_IP:9696/ --adminurl=http://$PRIVATE_IP:9696/
+keystone endpoint-create --region RegionOne --service-id=$NOVA_SVC_ID --publicurl="http://$PRIVATE_IP:8774/v2/%(tenant_id)s" --internalurl="http://$PRIVATE_IP:8774/v2/%(tenant_id)s" --adminurl="http://$PRIVATE_IP:8774/v2/%(tenant_id)s"
+keystone endpoint-create --region RegionOne --service-id=$CINDER_SVC_ID --publicurl="http://$PRIVATE_IP:8776/v1/%(tenant_id)s" --internalurl="http://$PRIVATE_IP:8776/v1/%(tenant_id)s" --adminurl="http://$PRIVATE_IP:8776/v1/%(tenant_id)s"
 
 # List the new endpoints
 keystone endpoint-list
@@ -194,8 +194,8 @@ unset SERVICE_TOKEN
 unset SERVICE_ENDPOINT
 
 # Verify identity service is functioning
-curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myuser", "password": "mypassword"}}}' -H "Content-type: application/json" http://$MY_IP:5000/v2.0/tokens | python -m json.tool
-curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myadmin", "password": "mypassword"}}}' -H "Content-type: application/json" http://$MY_IP:5000/v2.0/tokens | python -m json.tool
+curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myuser", "password": "mypassword"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
+curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myadmin", "password": "mypassword"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
 
 # Create the 'user' and 'admin' credentials
 mkdir ~/credentials
@@ -204,7 +204,7 @@ cat >> ~/credentials/user <<EOF
 export OS_USERNAME=myuser
 export OS_PASSWORD=mypassword
 export OS_TENANT_NAME=MyProject
-export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
 EOF
@@ -213,7 +213,7 @@ cat >> ~/credentials/admin <<EOF
 export OS_USERNAME=myadmin
 export OS_PASSWORD=mypassword
 export OS_TENANT_NAME=MyProject
-export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
 EOF
@@ -252,20 +252,20 @@ keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $GLANCE_USER_ID
 # Create a database for glance
 mysql -u root -pnotmysql -e "CREATE DATABASE glance;"
 mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'notglance';"
-mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'$MY_IP' IDENTIFIED BY 'notglance';"
+mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'$PRIVATE_IP' IDENTIFIED BY 'notglance';"
 mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'%' IDENTIFIED BY 'notglance';"
 
 # Configure the glance-api service
-sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$MY_IP/glance|g" /etc/glance/glance-api.conf
-sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $MY_IP/g" /etc/glance/glance-api.conf
+sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$PRIVATE_IP/glance|g" /etc/glance/glance-api.conf
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/glance/glance-api.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/glance/glance-api.conf
 sudo sed -i 's/%SERVICE_USER%/glance/g' /etc/glance/glance-api.conf
 sudo sed -i 's/%SERVICE_PASSWORD%/notglance/g' /etc/glance/glance-api.conf
 sudo sed -i 's/#flavor=/flavor = keystone/g' /etc/glance/glance-api.conf
 
 # Configure the glance-registry service
-sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$MY_IP/glance|g" /etc/glance/glance-registry.conf
-sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $MY_IP/g" /etc/glance/glance-registry.conf
+sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$PRIVATE_IP/glance|g" /etc/glance/glance-registry.conf
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/glance/glance-registry.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/glance/glance-registry.conf
 sudo sed -i 's/%SERVICE_USER%/glance/g' /etc/glance/glance-registry.conf
 sudo sed -i 's/%SERVICE_PASSWORD%/notglance/g' /etc/glance/glance-registry.conf
@@ -334,15 +334,15 @@ sudo apt-get install -y quantum-plugin-openvswitch-agent quantum-dhcp-agent quan
 # Create a database for quantum
 mysql -u root -pnotmysql -e "CREATE DATABASE quantum;"
 mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'localhost' IDENTIFIED BY 'notquantum';"
-mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'$MY_IP' IDENTIFIED BY 'notquantum';"
+mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'$PRIVATE_IP' IDENTIFIED BY 'notquantum';"
 mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'%' IDENTIFIED BY 'notquantum';"
 
 # Configure the quantum OVS plugin
-sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connection = mysql://quantum:notquantum@$MY_IP/quantum|g"  /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connection = mysql://quantum:notquantum@$PRIVATE_IP/quantum|g"  /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Default: enable_tunneling = False/enable_tunneling = True/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tenant_network_type = gre/tenant_network_type = gre/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
-sudo sed -i "s/# Default: local_ip =/local_ip = $LOCAL_IP/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s/# Default: local_ip =/local_ip = $PUBLIC_IP/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 
 # Use the 'admin' credentials to add the quantum service user in keystone
@@ -360,7 +360,7 @@ keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $QUANTUM_USER_I
 
 # Configure the quantum service to use keystone
 sudo sed -i 's/# auth_strategy = keystone/auth_strategy = keystone/g' /etc/quantum/quantum.conf
-sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $MY_IP/g" /etc/quantum/quantum.conf
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/quantum/quantum.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/quantum/quantum.conf
 sudo sed -i 's/%SERVICE_USER%/quantum/g' /etc/quantum/quantum.conf
 sudo sed -i 's/%SERVICE_PASSWORD%/notquantum/g' /etc/quantum/quantum.conf
@@ -429,7 +429,7 @@ keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $NOVA_USER_ID
 # Create a database for nova
 mysql -u root -pnotmysql -e "CREATE DATABASE nova;"
 mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'notnova';"
-mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'$MY_IP' IDENTIFIED BY 'notnova';"
+mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'$PRIVATE_IP' IDENTIFIED BY 'notnova';"
 mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'%' IDENTIFIED BY 'notnova';"
 
 # Configure nova
@@ -438,25 +438,25 @@ compute_driver=libvirt.LibvirtDriver
 libvirt_type=qemu
 libvirt_use_virtio_for_bridges=True
 network_api_class=nova.network.quantumv2.api.API
-quantum_url=http://$MY_IP:9696
+quantum_url=http://$PRIVATE_IP:9696
 quantum_auth_strategy=keystone
 quantum_admin_tenant_name=Services
 quantum_admin_username=quantum
 quantum_admin_password=notquantum
-quantum_admin_auth_url=http://$MY_IP:35357/v2.0
+quantum_admin_auth_url=http://$PRIVATE_IP:35357/v2.0
 firewall_driver=nova.virt.firewall.NoopFirewallDriver
 security_group_api=quantum
-sql_connection=mysql://nova:notnova@$MY_IP/nova
+sql_connection=mysql://nova:notnova@$PRIVATE_IP/nova
 auth_strategy=keystone
 force_config_drive=True
-my_ip=$MY_IP
+my_ip=$PRIVATE_IP
 EOF
 
 # Disable verbose logging
 sudo sed -i 's/verbose=True/verbose=False/g' /etc/nova/nova.conf
 
 # Configure nova to use keystone
-sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $MY_IP/g" /etc/nova/api-paste.ini
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/nova/api-paste.ini
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/nova/api-paste.ini
 sudo sed -i 's/%SERVICE_USER%/nova/g' /etc/nova/api-paste.ini
 sudo sed -i 's/%SERVICE_PASSWORD%/notnova/g' /etc/nova/api-paste.ini
@@ -573,18 +573,18 @@ keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $CINDER_USER_ID
 # Create a database for cinder
 mysql -u root -pnotmysql -e "CREATE DATABASE cinder;"
 mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'localhost' IDENTIFIED BY 'notcinder';"
-mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'$MY_IP' IDENTIFIED BY 'notcinder';"
+mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'$PRIVATE_IP' IDENTIFIED BY 'notcinder';"
 mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'%' IDENTIFIED BY 'notcinder';"
 
 # Configure cinder
 ( cat | sudo tee -a /etc/cinder/cinder.conf ) <<EOF
-sql_connection = mysql://cinder:notcinder@$MY_IP/cinder
-my_ip = $MY_IP
+sql_connection = mysql://cinder:notcinder@$PRIVATE_IP/cinder
+my_ip = $PRIVATE_IP
 EOF
 
 # Configure cinder-api to use keystone
-sudo sed -i "s/service_host = 127.0.0.1/service_host = $MY_IP/g" /etc/cinder/api-paste.ini
-sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $MY_IP/g" /etc/cinder/api-paste.ini
+sudo sed -i "s/service_host = 127.0.0.1/service_host = $PRIVATE_IP/g" /etc/cinder/api-paste.ini
+sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/cinder/api-paste.ini
 sudo sed -i 's/admin_tenant_name = %SERVICE_TENANT_NAME%/admin_tenant_name = Services/g' /etc/cinder/api-paste.ini
 sudo sed -i 's/admin_user = %SERVICE_USER%/admin_user = cinder/g' /etc/cinder/api-paste.ini
 sudo sed -i 's/admin_password = %SERVICE_PASSWORD%/admin_password = notcinder/g' /etc/cinder/api-paste.ini
@@ -707,8 +707,8 @@ sudo apt-get remove -y --purge openstack-dashboard-ubuntu-theme
 
 # Configure nova for VNC
 ( cat | sudo tee -a /etc/nova/nova.conf ) <<EOF
-novncproxy_base_url=http://$MY_IP:6080/vnc_auto.html
-vncserver_proxyclient_address=$MY_IP
+novncproxy_base_url=http://$PUBLIC_IP:6080/vnc_auto.html
+vncserver_proxyclient_address=$PRIVATE_IP
 vncserver_listen=0.0.0.0
 novnc_enable=true
 EOF

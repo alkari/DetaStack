@@ -40,6 +40,7 @@ service networking restart
 
 # Store Controller IP address
 CONT_IP=10.208.143.46
+CONT_PUB_IP=192.237.168.211
 
 # Set hostname
 sudo hostname nova1
@@ -73,14 +74,11 @@ sudo su
 # Verify network configurations
 ip a
 
-# Store Controller IP address
-CONT_IP=10.208.143.46
-
 # Store Public IP Address
-LOCAL_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
 
 # Store Private IP Address 
-MY_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
 
 # Create the 'user' and 'admin' credentials
 mkdir ~/credentials
@@ -89,7 +87,7 @@ cat >> ~/credentials/user <<EOF
 export OS_USERNAME=myuser
 export OS_PASSWORD=mypassword
 export OS_TENANT_NAME=MyProject
-export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
 EOF
@@ -98,7 +96,7 @@ cat >> ~/credentials/admin <<EOF
 export OS_USERNAME=myadmin
 export OS_PASSWORD=mypassword
 export OS_TENANT_NAME=MyProject
-export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
 EOF
@@ -146,7 +144,7 @@ force_config_drive=True
 volume_api_class=nova.volume.cinder.API
 glance_api_servers=$CONT_IP:9292
 image_service=nova.image.glance.GlanceImageService
-my_ip=$MY_IP
+my_ip=$PRIVATE_IP
 EOF
 
 # Disable verbose logging
@@ -160,8 +158,8 @@ sudo sed -i 's/%SERVICE_PASSWORD%/notnova/g' /etc/nova/api-paste.ini
 
 # Configure nova for VNC
 ( cat | sudo tee -a /etc/nova/nova.conf ) <<EOF
-novncproxy_base_url=http://$MY_IP:6080/vnc_auto.html ######## pub_ip of controller
-vncserver_proxyclient_address=$MY_IP
+novncproxy_base_url=http://$CONT_PUB_IP:6080/vnc_auto.html
+vncserver_proxyclient_address=$PRIVATE_IP
 vncserver_listen=0.0.0.0
 novnc_enable=true
 EOF
@@ -203,7 +201,7 @@ sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connec
 sudo sed -i 's/# Default: enable_tunneling = False/enable_tunneling = True/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tenant_network_type = gre/tenant_network_type = gre/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
-sudo sed -i "s/# Default: local_ip =/local_ip = $MY_IP/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s/# Default: local_ip =/local_ip = $PRIVATE_IP/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 
 # Configure the quantum service to use keystone
