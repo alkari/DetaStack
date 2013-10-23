@@ -1,0 +1,72 @@
+
+
+
+
+
+
+ Add keypairs
+
+Create at least one keypair for each project. If you have generated a keypair with an external tool, you can import it into OpenStack. The keypair can be used for multiple instances that belong to a project.
+
+ 
+To add a keypair
+1.
+Log in to the OpenStack dashboard.
+
+2.
+If you are a member of multiple projects, select a project from the drop-down list at the top of the Project tab.
+
+3.
+Click the Access & Security category.
+
+4.
+Click the Keypairs tab. The dashboard shows the keypairs that are available for this project.
+
+5.
+To add a keypair
+
+Click Create Keypair.
+
+The Create Keypair window appears.
+a.
+In the Keypair Name box, enter a name for your keypair. 
+
+b.
+Click Create Keypair.
+
+c.
+Respond to the prompt to download the keypair.
+
+
+6.
+To import a keypair
+
+Click Import Keypair.
+
+The Import Keypair window appears.
+a.
+In the Keypair Name box, enter the name of your keypair. 
+
+b.
+In the Public Key box, copy the public key.
+
+c.
+Click Import Keypair.
+
+
+7.
+Save the *.pem file locally and change its permissions so that only you can read and write to the file:
+
+
+$ chmod 0600 MY_PRIV_KEY.pem
+
+
+
+8.
+Use the ssh-add command to make the keypair known to SSH:
+$ ssh-add MY_PRIV_KEY.pem
+
+
+The public key of the keypair is registered in the Nova database.
+
+The dashboard lists the keypair in the Access & Security category.

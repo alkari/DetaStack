@@ -1,0 +1,71 @@
+#!/bin/sh
+
+set -e
+
+HOST=$1
+
+if [ -z $HOST ]; then
+  echo "Hostname is required! ($0 <host>)" >&2
+  exit 1
+fi
+
+sudo hostname $HOST
+
+sudo echo $HOST > /etc/hostname
+sudo sed -i 's/ubuntu/$HOST/g' /etc/hosts
+
+
+service rsyslog stop || true
+find /var/log -type f -print0 | xargs -0 rm -vf
+
+
+# Install supporting packages
+sudo apt-get -y install curl ntp
+
+# Synchronize time
+sudo ntpdate -u 129.6.15.30 
+
+
+service networking restart
+
+
+
+sudo shutdown -r now
+
+# LOGIN WITH NEW USER: labuser/labuserpw
+
+
+sudo vi /etc/profile
+
+# Add at the bottom of file
+if [ -n "$PS1" ]; then
+	export PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+	export PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+fi
+
+
+# Store Public IP Address
+PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+
+# Store Private IP Address 
+PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+
+
+sudo su
+
+
+# 5- Enable the Cloud Archive repository
+cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
+deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/grizzly main
+EOF
+
+sudo apt-get install ubuntu-cloud-keyring
+
+# 6 - Update all
+sudo apt-get update -y && apt-get upgrade -y
+
+
+
+
+echo "All clear. You may now reboot this box."
+

@@ -1,0 +1,60 @@
+
+
+
+
+Anoop OK
+Controller
+67.207.157.20
+NvUx9HhgGV2F
+c0b00213-b9c1-45f8-92b1-7a10b71aa50c (new)
+
+Daniel OK
+Controller
+166.78.101.142
+Fqi854xjuKZf
+2f61a6e6-f56a-406c-997d-9608236bbfe2
+
+
+Ramon OK
+166.78.252.197
+x9B75rt2WfJX
+b47b78d4-3708-49c6-8003-bb86b5ad2b3a
+
+
+
+
+
+166.78.249.120 xxx
+eJ9HZ26wP9n9
+3a769e7f-70e9-4904-952c-b60eb1e5bee3
+
+
+
+
+
+
+Controller
+166.78.252.181 xxx
+5urNrLoozs9d
+467211be-f37b-4c59-b964-e130e089777a
+
+
+
+
+Compute ??? nova-agent???
+166.78.107.114 xxx
+ggTXt5SPjX8v
+c69e1676-a5fa-47b6-b908-765831b9a773
+
+
+
+
+67.207.155.156 (mine)
+notopenstack
+cdafc421-83ee-4e76-9979-1230be63ea38
+
+??? mine nova1
+Compute
+166.78.250.36
+y226HzZYVaNx
+24d8f1b9-a255-4e6f-9e98-8875e606cf83

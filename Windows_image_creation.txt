@@ -1,0 +1,84 @@
+http://www.cloudbase.it/ws2012/
+
+
+OpenStack Windows Server 2012 Evaluation
+
+Microsoft Windows Server 2012 Standard Evaluation is now available as a downloadable image that can be directly deployed to OpenStack!
+
+Supported hypervisors:
+Hyper-V
+KVM
+XenServer / XCP
+
+All the images come with the required hypervisor specific drivers and tools, for example VirtIO for KVM and XenServer tools for XenServer / XCP.
+
+Our Cloudbase-Init is also installed and the image has been properly sysprepped and generalized, no additional work is required on your side.
+
+Deploying Windows OpenStack instances has never been so easy!
+
+This is an official release and Microsoft provided a specific EULA that needs to be accepted before download. Please note in particular that this is an evaluation edition meant to be used in test environments only.
+
+ 
+
+ 
+Windows Server 2012 Eval CBS
+
+ 
+
+User access
+
+This image comes with RDP enabled. Cloudbase-Init creates a user called “Admin” during the instance initialization. Starting with OpenStack Grizzly, the password can be retrieved with:
+nova get-password <instance id or name> <path to SSH private key>
+
+The usual Windows “Administrator” user is also available, but in order to enable it the password must be changed by accessing the instance console (e.g. from the Horizon dashboard).
+
+Note: by default in Windows Server 2012 ping requests are blocked by the firewall.
+
+ 
+
+Glance deployment
+
+Deploying your downloaded image to Glance is very easy. You can even specify a hypervisor_type property and support multiple hypervisors with different images, for example:
+gunzip -cd  windows_server_2012_standard_eval_hyperv_20130411.vhd.gz | \
+glance image-create --property hypervisor_type=hyperv --name "Windos Server 2012 Std Eval" \
+--container-format bare --disk-format vhd
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Download Windows Server 2012 Standard Evaluation for OpenStack
+
+
+Image
+
+Format
+
+Date
+
+Cloudbase-init
+
+SHA1
+
+
+Microsoft Hyper-V  VHD  May 31, 2013  0.9.1  968dede6ced18c0606b5db02b5ac6a0988ccb0af  
+KVM  QCOW2  May 10, 2013  0.9.1  bed1f13c6253b7ad206fedfea8e3fb152f47ab5b  

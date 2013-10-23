@@ -8,7 +8,24 @@
 # /dev/xvdb [100GB] (Cinder Logical Volume]
 #
 # bugtrack al.kari@detacloud.com || @detacloud
-# 2013-08-25
+# 2013-10-10
+
+### Replace the following credentials for production install:
+# mysqlpw
+# keystonepw
+# quantumpw
+# novapw
+# cinderpw
+# glancepw
+# ADMINSERVICETOKEN
+# LabTenant
+# labuser / labuserpw
+# labadmin / labadminpw
+###
+
+################################################################
+# PRE-PREP
+################################################################
 
 # Check if nested virtualization is supported. Use qemu if not.
 apt-get install -y cpu-checker
@@ -19,25 +36,26 @@ egrep -c '(vmx|svm)' /proc/cpuinfo
 # use qemu if 0, else use kvm
 # nova-compute-kvm requires that your CPU supports hardware-assisted virtualization (HVM) such as Intel VT-x or AMD-V. If your CPU does not support this, or if you are already running in a virtualized environment, you can instead use the nova-compute-qemu package. This package provides software-based virtualization.
 
-
-### Replace the following credentials for production install:
-# notmysql
-# notkeystone
-# notquantum
-# notnova
-# notcinder
-# notglance
-# ADMIN
-# MyProject
-# myuser / mypassword
-# myadmin / mypassword
-###
-
 # Add a user
-adduser mystack
-# Enter: mypassword
+adduser labuser
+# Enter: labuserpw
 apt-get install sudo -y
-echo "mystack ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+echo "labuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Store IP Address information on reboot. 
+vi /etc/provile
+
+# Add at the bottom of /etc/profile
+if [ -n "$PS1" ]; then
+	export PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+	export PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+fi
+
+
+################################################################
+# User Prep Host
+################################################################
+
 
 # 3 - Install supporting packages
 sudo apt-get -y install curl ntp
@@ -45,44 +63,35 @@ sudo apt-get -y install curl ntp
 # 4 - Synchronize time
 sudo ntpdate -u 129.6.15.30 
 
+
+# Disable IP source route verification
 sudo sed -i "s/#net.ipv4.conf.default.rp_filter=1/net.ipv4.conf.default.rp_filter=0/g" /etc/sysctl.conf
 sudo sed -i "s/#net.ipv4.conf.all.rp_filter=1/net.ipv4.conf.all.rp_filter=0/g" /etc/sysctl.conf
-
-sysctl -p
-
-service networking restart
-
-# Verify network configurations
-ip a
+sudo sysctl -p
+sudo service networking restart
 
 # Set hostname
 sudo hostname controller
-echo controller > /etc/hostname
+sudo -- sh -c "echo controller > /etc/hostname"
 
-# Replace 'ubuntu' below with existing host name
-sudo sed -i 's/ubuntu/controller/g' /etc/hosts
+sudo -- sh -c "echo $PUBLIC_IP controller > /etc/hosts"
+sudo -- sh -c "echo $PRIVATE_IP controller >> /etc/hosts"
 
+# IMPORTANT: Reboot after changing host name
 sudo shutdown -r now
 
-# LOGIN WITH NEW USER: mystack/mypassword
+# LOGIN WITH NEW USER: labuser/labuserpw
 
-sudo su
-
-# Store Public IP Address
-PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
-
-# Store Private IP Address 
-PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
 
 # 5- Enable the Cloud Archive repository
-cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
+sudo -- sh -c " cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
 deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/grizzly main
-EOF
+EOF"
 
 sudo apt-get install ubuntu-cloud-keyring
 
 # 6 - Update all
-sudo apt-get update -y && apt-get upgrade -y
+sudo apt-get update -y && sudo apt-get upgrade -y
 
 
 ####################################################################################
@@ -93,8 +102,8 @@ sudo apt-get update -y && apt-get upgrade -y
 
 # 7 - Preseed the MySQL install
 cat <<EOF | sudo debconf-set-selections
-mysql-server-5.1 mysql-server/root_password password notmysql
-mysql-server-5.1 mysql-server/root_password_again password notmysql
+mysql-server-5.1 mysql-server/root_password password mysqlpw
+mysql-server-5.1 mysql-server/root_password_again password mysqlpw
 mysql-server-5.1 mysql-server/start_on_boot boolean true
 EOF
 
@@ -112,24 +121,33 @@ sudo service mysql restart
 ####################################################################################
 ####################################################################################
 
-# 11 - Install Keystone
+# Install Keystone
 sudo apt-get install -y keystone
 
-# 12 - Delete the keystone.db file created in the /var/lib/keystone directory.
+# Delete the keystone.db file created in the /var/lib/keystone directory.
 sudo rm /var/lib/keystone/keystone.db
 
 # Verify the OpenStack version (Grizzly == 2013.1)
 sudo dpkg -p keystone | grep "Version:"
 
 # Create a database for keystone
-sudo mysql -u root -pnotmysql -e "CREATE DATABASE keystone;"
-sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'notkeystone';"
-sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'$PRIVATE_IP' IDENTIFIED BY 'notkeystone';"
-sudo mysql -u root -pnotmysql -e "GRANT ALL ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'notkeystone';"
+sudo mysql -u root -pmysqlpw -e "CREATE DATABASE keystone;"
+sudo mysql -u root -pmysqlpw -e "GRANT ALL ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'keystonepw';"
+sudo mysql -u root -pmysqlpw -e "GRANT ALL ON keystone.* TO 'keystone'@'$PRIVATE_IP' IDENTIFIED BY 'keystonepw';"
+sudo mysql -u root -pmysqlpw -e "GRANT ALL ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'keystonepw';"
 
 
 # Configure keystone to use MySQL
-sudo sed -i "s|connection = sqlite:////var/lib/keystone/keystone.db|connection = mysql://keystone:notkeystone@$PRIVATE_IP/keystone|g" /etc/keystone/keystone.conf
+sudo sed -i "s|connection = sqlite:////var/lib/keystone/keystone.db|connection = mysql://keystone:keystonepw@$PRIVATE_IP/keystone|g" /etc/keystone/keystone.conf
+
+# Change default admin_token
+sudo sed -i "s|# admin_token = ADMIN|admin_token = ADMINSERVICETOKEN|g" /etc/keystone/keystone.conf
+
+# Create encryption certificate to use ssl with other services
+########################################################## sudo keystone-manage pki_setup
+
+########################################################## sudo -- sh -c "sudo chown -R keystone:keystone /etc/keystone/*"
+
 
 # Restart keystone service
 sudo service keystone restart
@@ -141,11 +159,11 @@ sudo pgrep -l keystone
 sudo -u keystone keystone-manage db_sync
 
 # Export the keystone "admin" credentials to add the first users
-export SERVICE_TOKEN=ADMIN
+export SERVICE_TOKEN=ADMINSERVICETOKEN
 export SERVICE_ENDPOINT=http://$PRIVATE_IP:35357/v2.0
 
 # Create new tenants (The services tenant will be used later when configuring services to use keystone)
-TENANT_ID=`keystone tenant-create --name MyProject | awk '/ id / { print $4 }'`
+TENANT_ID=`keystone tenant-create --name LabTenant | awk '/ id / { print $4 }'`
 SERVICE_TENANT_ID=`keystone tenant-create --name Services | awk '/ id / { print $4 }'`
 # 22- Verify
 keystone tenant-list
@@ -154,8 +172,8 @@ keystone tenant-list
 ADMIN_ROLE_ID=`keystone role-create --name admin | awk '/ id / { print $4 }'`
 
 # Create new users
-MEMBER_USER_ID=`keystone user-create --tenant-id $TENANT_ID --name myuser --pass mypassword | awk '/ id / { print $4 }'`
-ADMIN_USER_ID=`keystone user-create --tenant-id $TENANT_ID --name myadmin --pass mypassword | awk '/ id / { print $4 }'`
+MEMBER_USER_ID=`keystone user-create --tenant-id $TENANT_ID --name labuser --pass labuserpw | awk '/ id / { print $4 }'`
+ADMIN_USER_ID=`keystone user-create --tenant-id $TENANT_ID --name labadmin --pass labadminpw | awk '/ id / { print $4 }'`
 
 # Grant admin role
 keystone user-role-add --user-id $ADMIN_USER_ID --tenant-id $TENANT_ID --role-id $ADMIN_ROLE_ID
@@ -194,25 +212,25 @@ unset SERVICE_TOKEN
 unset SERVICE_ENDPOINT
 
 # Verify identity service is functioning
-curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myuser", "password": "mypassword"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
-curl -d '{"auth": {"tenantName": "MyProject", "passwordCredentials": {"username": "myadmin", "password": "mypassword"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
+curl -d '{"auth": {"tenantName": "LabTenant", "passwordCredentials": {"username": "labuser", "password": "labuserpw"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
+curl -d '{"auth": {"tenantName": "LabTenant", "passwordCredentials": {"username": "labadmin", "password": "labadminpw"}}}' -H "Content-type: application/json" http://$PRIVATE_IP:5000/v2.0/tokens | python -m json.tool
 
 # Create the 'user' and 'admin' credentials
 mkdir ~/credentials
 
 cat >> ~/credentials/user <<EOF
-export OS_USERNAME=myuser
-export OS_PASSWORD=mypassword
-export OS_TENANT_NAME=MyProject
+export OS_USERNAME=labuser
+export OS_PASSWORD=labuserpw
+export OS_TENANT_NAME=LabTenant
 export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
 EOF
 
 cat >> ~/credentials/admin <<EOF
-export OS_USERNAME=myadmin
-export OS_PASSWORD=mypassword
-export OS_TENANT_NAME=MyProject
+export OS_USERNAME=labadmin
+export OS_PASSWORD=labadminpw
+export OS_TENANT_NAME=LabTenant
 export OS_AUTH_URL=http://$PRIVATE_IP:5000/v2.0/
 export OS_REGION_NAME=RegionOne
 export OS_NO_CACHE=1
@@ -236,39 +254,41 @@ EOF
 # Install the image service (glance)
 sudo apt-get install -y glance
 
+sudo rm /var/lib/glance/glance.sqlite
+
 # Use the 'admin' credentials to add the glance service user in keystone
-source ~/credentials/admin
+# source ~/credentials/admin
 
 # Create glance service user in the services tenant
-GLANCE_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name glance --pass notglance | awk '/ id / { print $4 }'`
+GLANCE_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name glance --pass glancepw | awk '/ id / { print $4 }'`
 
 # Grant admin role to glance service user
 keystone user-role-add --user-id $GLANCE_USER_ID --tenant-id $SERVICE_TENANT_ID --role-id $ADMIN_ROLE_ID
 
-# List the new user and role assigment
+# List the new user and role assignment
 keystone user-list --tenant-id $SERVICE_TENANT_ID
 keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $GLANCE_USER_ID
 
 # Create a database for glance
-mysql -u root -pnotmysql -e "CREATE DATABASE glance;"
-mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'notglance';"
-mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'$PRIVATE_IP' IDENTIFIED BY 'notglance';"
-mysql -u root -pnotmysql -e "GRANT ALL ON glance.* TO 'glance'@'%' IDENTIFIED BY 'notglance';"
+mysql -u root -pmysqlpw -e "CREATE DATABASE glance;"
+mysql -u root -pmysqlpw -e "GRANT ALL ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'glancepw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON glance.* TO 'glance'@'$PRIVATE_IP' IDENTIFIED BY 'glancepw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON glance.* TO 'glance'@'%' IDENTIFIED BY 'glancepw';"
 
 # Configure the glance-api service
-sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$PRIVATE_IP/glance|g" /etc/glance/glance-api.conf
+sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:glancepw@$PRIVATE_IP/glance|g" /etc/glance/glance-api.conf
 sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/glance/glance-api.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/glance/glance-api.conf
 sudo sed -i 's/%SERVICE_USER%/glance/g' /etc/glance/glance-api.conf
-sudo sed -i 's/%SERVICE_PASSWORD%/notglance/g' /etc/glance/glance-api.conf
+sudo sed -i 's/%SERVICE_PASSWORD%/glancepw/g' /etc/glance/glance-api.conf
 sudo sed -i 's/#flavor=/flavor = keystone/g' /etc/glance/glance-api.conf
 
 # Configure the glance-registry service
-sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:notglance@$PRIVATE_IP/glance|g" /etc/glance/glance-registry.conf
+sudo sed -i "s|sql_connection = sqlite:////var/lib/glance/glance.sqlite|sql_connection = mysql://glance:glancepw@$PRIVATE_IP/glance|g" /etc/glance/glance-registry.conf
 sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/glance/glance-registry.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/glance/glance-registry.conf
 sudo sed -i 's/%SERVICE_USER%/glance/g' /etc/glance/glance-registry.conf
-sudo sed -i 's/%SERVICE_PASSWORD%/notglance/g' /etc/glance/glance-registry.conf
+sudo sed -i 's/%SERVICE_PASSWORD%/glancepw/g' /etc/glance/glance-registry.conf
 sudo sed -i 's/#flavor=/flavor = keystone/g' /etc/glance/glance-registry.conf
 
 # Restart glance services
@@ -322,7 +342,6 @@ export IMAGE_ID_1=$IMAGE_ID_1
 export IMAGE_ID_2=$IMAGE_ID_2
 export UBUNTU_ID=$UBUNTU_ID
 export WINIMAGE_ID=$WINIMAGE_ID
-
 EOF
 
 
@@ -343,13 +362,13 @@ sudo apt-get install -y quantum-server quantum-plugin-openvswitch
 sudo apt-get install -y quantum-plugin-openvswitch-agent quantum-dhcp-agent quantum-l3-agent
 
 # Create a database for quantum
-mysql -u root -pnotmysql -e "CREATE DATABASE quantum;"
-mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'localhost' IDENTIFIED BY 'notquantum';"
-mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'$PRIVATE_IP' IDENTIFIED BY 'notquantum';"
-mysql -u root -pnotmysql -e "GRANT ALL ON quantum.* TO 'quantum'@'%' IDENTIFIED BY 'notquantum';"
+mysql -u root -pmysqlpw -e "CREATE DATABASE quantum;"
+mysql -u root -pmysqlpw -e "GRANT ALL ON quantum.* TO 'quantum'@'localhost' IDENTIFIED BY 'quantumpw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON quantum.* TO 'quantum'@'$PRIVATE_IP' IDENTIFIED BY 'quantumpw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON quantum.* TO 'quantum'@'%' IDENTIFIED BY 'quantumpw';"
 
 # Configure the quantum OVS plugin
-sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connection = mysql://quantum:notquantum@$PRIVATE_IP/quantum|g"  /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
+sudo sed -i "s|sql_connection = sqlite:////var/lib/quantum/ovs.sqlite|sql_connection = mysql://quantum:quantumpw@$PRIVATE_IP/quantum|g"  /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Default: enable_tunneling = False/enable_tunneling = True/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tenant_network_type = gre/tenant_network_type = gre/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
 sudo sed -i 's/# Example: tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini
@@ -360,7 +379,7 @@ sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/quantum/plugins/openvsw
 source ~/credentials/admin
 
 # Create quantum service user in the services tenant
-QUANTUM_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name quantum --pass notquantum | awk '/ id / { print $4 }'`
+QUANTUM_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name quantum --pass quantumpw | awk '/ id / { print $4 }'`
 
 # Grant admin role to quantum service user
 keystone user-role-add --user-id $QUANTUM_USER_ID --tenant-id $SERVICE_TENANT_ID --role-id $ADMIN_ROLE_ID
@@ -374,7 +393,7 @@ sudo sed -i 's/# auth_strategy = keystone/auth_strategy = keystone/g' /etc/quant
 sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/quantum/quantum.conf
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/quantum/quantum.conf
 sudo sed -i 's/%SERVICE_USER%/quantum/g' /etc/quantum/quantum.conf
-sudo sed -i 's/%SERVICE_PASSWORD%/notquantum/g' /etc/quantum/quantum.conf
+sudo sed -i 's/%SERVICE_PASSWORD%/quantumpw/g' /etc/quantum/quantum.conf
 
 # Start Open vSwitch
 sudo service openvswitch-switch restart
@@ -392,12 +411,16 @@ sudo service quantum-l3-agent restart
 # Use the 'user' credentials
 source ~/credentials/user
 
-# Create a network and subnet
+# Create a network (L2)
 PRIVATE_NET_ID=`quantum net-create private | awk '/ id / { print $4 }'`
+
+# List Networks
+quantum net-list
+
+# Create Subnet (L3)
 PRIVATE_SUBNET1_ID=`quantum subnet-create --name private-subnet1 $PRIVATE_NET_ID 10.208.128.0/29 | awk '/ id / { print $4 }'`
 
-# List network and subnet
-quantum net-list
+# List Subnets
 quantum subnet-list
 
 # Examine details of network and subnet
@@ -440,7 +463,7 @@ sudo apt-get install -y nova-api nova-scheduler nova-conductor nova-compute-qemu
 source ~/credentials/admin
 
 # Create nova service user in the services tenant
-NOVA_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name nova --pass notnova | awk '/ id / { print $4 }'`
+NOVA_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name nova --pass novapw | awk '/ id / { print $4 }'`
 
 # Grant admin role to nova service user
 keystone user-role-add --user-id $NOVA_USER_ID --tenant-id $SERVICE_TENANT_ID --role-id $ADMIN_ROLE_ID
@@ -450,10 +473,10 @@ keystone user-list --tenant-id $SERVICE_TENANT_ID
 keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $NOVA_USER_ID
 
 # Create a database for nova
-mysql -u root -pnotmysql -e "CREATE DATABASE nova;"
-mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'notnova';"
-mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'$PRIVATE_IP' IDENTIFIED BY 'notnova';"
-mysql -u root -pnotmysql -e "GRANT ALL ON nova.* TO 'nova'@'%' IDENTIFIED BY 'notnova';"
+mysql -u root -pmysqlpw -e "CREATE DATABASE nova;"
+mysql -u root -pmysqlpw -e "GRANT ALL ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'novapw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON nova.* TO 'nova'@'$PRIVATE_IP' IDENTIFIED BY 'novapw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON nova.* TO 'nova'@'%' IDENTIFIED BY 'novapw';"
 
 # Configure nova
 cat <<EOF | sudo tee -a /etc/nova/nova.conf
@@ -465,11 +488,11 @@ quantum_url=http://$PRIVATE_IP:9696
 quantum_auth_strategy=keystone
 quantum_admin_tenant_name=Services
 quantum_admin_username=quantum
-quantum_admin_password=notquantum
+quantum_admin_password=quantumpw
 quantum_admin_auth_url=http://$PRIVATE_IP:35357/v2.0
 firewall_driver=nova.virt.firewall.NoopFirewallDriver
 security_group_api=quantum
-sql_connection=mysql://nova:notnova@$PRIVATE_IP/nova
+sql_connection=mysql://nova:novapw@$PRIVATE_IP/nova
 auth_strategy=keystone
 force_config_drive=True
 my_ip=$PRIVATE_IP
@@ -482,7 +505,7 @@ sudo sed -i 's/verbose=True/verbose=False/g' /etc/nova/nova.conf
 sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/nova/api-paste.ini
 sudo sed -i 's/%SERVICE_TENANT_NAME%/Services/g' /etc/nova/api-paste.ini
 sudo sed -i 's/%SERVICE_USER%/nova/g' /etc/nova/api-paste.ini
-sudo sed -i 's/%SERVICE_PASSWORD%/notnova/g' /etc/nova/api-paste.ini
+sudo sed -i 's/%SERVICE_PASSWORD%/novapw/g' /etc/nova/api-paste.ini
 
 # Initialize the nova database
 sudo -u nova nova-manage db sync
@@ -516,20 +539,24 @@ nova image-list
 # List flavors
 nova flavor-list
 
+# Add flavors
+nova flavor-create m1.micro 6 256 0 1
+nova flavor-create m1.nano 7 1024 0 1
+
 # Boot an instance using flavor and image names (if names are unique)
-nova boot --image cirros-qcow2 --flavor m1.tiny MyFirstInstance
+nova boot --image cirros-qcow2 --flavor m1.tiny LabFirstInstance
 
 # Boot an instance using flavor and image IDs
-nova boot --image $IMAGE_ID_2 --flavor 1 MySecondInstance
+nova boot --image $IMAGE_ID_2 --flavor 1 LabSecondInstance
 
 # List instances, notice status of instance
 nova list
 
 # Show details of instance
-nova show MyFirstInstance
+nova show LabFirstInstance
 
 # View console log of instance
-nova console-log MyFirstInstance
+nova console-log LabFirstInstance
 
 # Get network namespace (ie, qdhcp-5ab46e23-118a-4cad-9ca8-51d56a5b6b8c)
 sudo ip netns
@@ -560,8 +587,8 @@ exit
 sudo virsh list --all
 
 # Delete instances
-nova delete MyFirstInstance
-nova delete MySecondInstance
+nova delete LabFirstInstance
+nova delete LabSecondInstance
 
 # List instances, notice status of instance
 nova list
@@ -584,7 +611,7 @@ sudo apt-get install -y cinder-api cinder-scheduler cinder-volume
 source ~/credentials/admin
 
 # Create cinder service user in the services tenant
-CINDER_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name cinder --pass notcinder | awk '/ id / { print $4 }'`
+CINDER_USER_ID=`keystone user-create --tenant-id $SERVICE_TENANT_ID --name cinder --pass cinderpw | awk '/ id / { print $4 }'`
 
 # Grant admin role to cinder service user
 keystone user-role-add --user-id $CINDER_USER_ID --tenant-id $SERVICE_TENANT_ID --role-id $ADMIN_ROLE_ID
@@ -594,14 +621,14 @@ keystone user-list --tenant-id $SERVICE_TENANT_ID
 keystone user-role-list --tenant-id $SERVICE_TENANT_ID --user-id $CINDER_USER_ID
 
 # Create a database for cinder
-mysql -u root -pnotmysql -e "CREATE DATABASE cinder;"
-mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'localhost' IDENTIFIED BY 'notcinder';"
-mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'$PRIVATE_IP' IDENTIFIED BY 'notcinder';"
-mysql -u root -pnotmysql -e "GRANT ALL ON cinder.* TO 'cinder'@'%' IDENTIFIED BY 'notcinder';"
+mysql -u root -pmysqlpw -e "CREATE DATABASE cinder;"
+mysql -u root -pmysqlpw -e "GRANT ALL ON cinder.* TO 'cinder'@'localhost' IDENTIFIED BY 'cinderpw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON cinder.* TO 'cinder'@'$PRIVATE_IP' IDENTIFIED BY 'cinderpw';"
+mysql -u root -pmysqlpw -e "GRANT ALL ON cinder.* TO 'cinder'@'%' IDENTIFIED BY 'cinderpw';"
 
 # Configure cinder
 ( cat | sudo tee -a /etc/cinder/cinder.conf ) <<EOF
-sql_connection = mysql://cinder:notcinder@$PRIVATE_IP/cinder
+sql_connection = mysql://cinder:cinderpw@$PRIVATE_IP/cinder
 my_ip = $PRIVATE_IP
 EOF
 
@@ -610,7 +637,7 @@ sudo sed -i "s/service_host = 127.0.0.1/service_host = $PRIVATE_IP/g" /etc/cinde
 sudo sed -i "s/auth_host = 127.0.0.1/auth_host = $PRIVATE_IP/g" /etc/cinder/api-paste.ini
 sudo sed -i 's/admin_tenant_name = %SERVICE_TENANT_NAME%/admin_tenant_name = Services/g' /etc/cinder/api-paste.ini
 sudo sed -i 's/admin_user = %SERVICE_USER%/admin_user = cinder/g' /etc/cinder/api-paste.ini
-sudo sed -i 's/admin_password = %SERVICE_PASSWORD%/admin_password = notcinder/g' /etc/cinder/api-paste.ini
+sudo sed -i 's/admin_password = %SERVICE_PASSWORD%/admin_password = cinderpw/g' /etc/cinder/api-paste.ini
 
 # Initialize the database schema
 sudo -u cinder cinder-manage db sync
@@ -646,8 +673,8 @@ sudo service tgt restart
 sudo service open-iscsi restart
 
 # Create the volume group
-sudo pvcreate /dev/xvdb
-sudo vgcreate cinder-volumes /dev/xvdb
+sudo pvcreate /dev/xvda2
+sudo vgcreate cinder-volumes /dev/xvda2
 
 # Verify the volume group
 sudo vgdisplay
@@ -661,10 +688,10 @@ sudo service cinder-api restart
 source ~/credentials/user
 
 # Create a new volume
-cinder create 1 --display-name MyFirstVolume
+cinder create 1 --display-name LabFirstVolume
 
 # Boot an instance to attach volume to
-nova boot --image cirros-qcow2 --flavor m1.tiny MyVolumeInstance
+nova boot --image cirros-qcow2 --flavor m1.tiny LabVolumeInstance
 
 # List instances, notice status of instance
 nova list
@@ -707,7 +734,7 @@ nova volume-detach <instance-id> <volume-id>
 cinder list
 
 # Delete instance
-nova delete MyVolumeInstance
+nova delete LabVolumeInstance
 
 # From the dashboard, try booting another instance, attach volume to new instance, and mount volume. Data should be preserved on volume.
 
@@ -748,7 +775,7 @@ sudo service nova-cert restart
 sudo service nova-consoleauth restart
 sudo service apache2 restart
 
-# Point your browser to http://10.0.0.X/horizon
+# Point your browser to http://<IP_ADDRESS>/horizon
 
 ####################################################################################
 ####################################################################################
@@ -758,13 +785,13 @@ sudo service apache2 restart
 
 
 # Create a nova keypair, saving private key
-nova keypair-add MyKeypair > MyKeypair.pem
+nova keypair-add LabKeypair > LabKeypair.pem
 
 # Change private key permissions
-chmod 600 MyKeypair.pem
+chmod 600 LabKeypair.pem
 
 # Boot an instance using the keypair
-nova boot --image cirros-qcow2 --flavor m1.tiny --key-name MyKeypair MyKeypairInstance
+nova boot --image cirros-qcow2 --flavor m1.tiny --key-name LabKeypair LabKeypairInstance
 
 # List instances, notice status of instance
 nova list
@@ -773,7 +800,7 @@ nova list
 sudo ip netns exec $NETNS_ID ping -c 3 10.208.128.3
 
 # Log into first instance ( you should be logged right into a shell, no password necessary )
-sudo ip netns exec $NETNS_ID ssh -i MyKeypair.pem cirros@10.208.128.3
+sudo ip netns exec $NETNS_ID ssh -i LabKeypair.pem cirros@10.208.128.3
 
 # If you get a 'REMOTE HOST IDENTIFICATION HAS CHANGED' warning from previous command
 sudo ssh-keygen -f "/root/.ssh/known_hosts" -R 10.208.128.3
@@ -782,7 +809,7 @@ sudo ssh-keygen -f "/root/.ssh/known_hosts" -R 10.208.128.3
 exit
 
 # Delete instance
-nova delete MyKeypairInstance
+nova delete LabKeypairInstance
 
 # List instances, notice status of instance
 nova list
@@ -792,13 +819,75 @@ nova list
 
 ####################################################################################
 ####################################################################################
-#				
+#				Advanced Networking
 ####################################################################################
 ####################################################################################
 
 
-# Get instance password
-nova get-password <instance id or name> <path to SSH private key>
+# Use the 'user' credentials
+source ~/credentials/user
 
-# Copy files between nodes
-scp root@controller:root/credentials/quantum ~/credentials/quantum
+# Create a total of four instances (exhaust 10.208.128.0/29 subnet IP space)
+nova boot --image cirros-qcow2 --flavor m1.micro LabInstance1 --poll
+nova boot --image cirros-qcow2 --flavor m1.micro LabInstance2 --poll
+nova boot --image cirros-qcow2 --flavor m1.micro LabInstance3 --poll
+nova boot --image cirros-qcow2 --flavor m1.micro LabInstance4 --poll
+
+# Create an additional subnet
+PRIVATE_SUBNET2_ID=`quantum subnet-create --name private-subnet2 $PRIVATE_NET_ID 10.208.128.8/29 | awk '/ id / { print $4 }'`
+
+# Examine details of new subnet
+quantum subnet-show $PRIVATE_SUBNET2_ID
+
+# Create a router and connect the two subnets
+ROUTER_ID=`quantum router-create LabRouter | awk '/ id / { print $4 }'`
+quantum router-interface-add $ROUTER_ID $PRIVATE_SUBNET1_ID
+quantum router-interface-add $ROUTER_ID $PRIVATE_SUBNET2_ID
+
+# Boot a fifth instance
+nova boot --image cirros-qcow2 --flavor m1.micro LabInstance5
+
+# Check if any security group rules were created
+nova secgroup-list-rules default
+
+# Log into instance in first subnet ( username is 'cirros', password is 'cubswin:)' )
+sudo ip netns exec $NETNS_ID ssh cirros@10.208.128.3
+
+# If you get a 'REMOTE HOST IDENTIFICATION HAS CHANGED' warning from previous command
+sudo ssh-keygen -f "/root/.ssh/known_hosts" -R 10.208.128.3
+
+# Ping instance in second subnet (should fail, as security groups are enforced between subnets)
+ping -c 3 10.208.128.11
+
+# Log out of instance
+exit
+
+# Add rules to default security group allowing ping and ssh between instances in the default security group
+nova secgroup-add-group-rule default default icmp -1 -1
+nova secgroup-add-group-rule default default tcp 22 22
+
+# Wait for rules to take effect...
+
+# Log into instance in first subnet ( username is 'cirros', password is 'cubswin:)' )
+sudo ip netns exec $NETNS_ID ssh cirros@10.208.128.3
+
+# Ping instance in second subnet
+ping -c 3 10.208.128.11
+
+# Log out of instance
+exit
+
+# Create 'quantum' credentials
+cat >> ~/credentials/quantum <<EOF
+export OS_USERNAME=quantum
+export OS_PASSWORD=quantumpw
+export OS_TENANT_NAME=Services
+export OS_AUTH_URL=http://$MY_IP:5000/v2.0/
+export OS_REGION_NAME=RegionOne
+export OS_NO_CACHE=1
+EOF
+
+# Use the 'quantum' credentials
+source ~/credentials/quantum
+
+

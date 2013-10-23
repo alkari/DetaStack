@@ -1,0 +1,35 @@
+Live Migration
+
+nova list
+nova show <instance-id>
+nova-manage service list
+nova-manage service describe_resource <host-name>
+nova live-migration <instance-id> <host-name>
+
+
+nova hypervisor-list
+nova boot --image e526642f-9e16-4095-996a-9709dd117bd5 --flavor m1.small --availability-zone nova:controller WinVM
+
+
+
+
+# Get instance password
+nova get-password <instance id or name> <path to SSH private key>
+
+# Copy files between nodes
+scp root@controller:root/credentials/quantum ~/credentials/quantum
+scp root@192.237.168.211:images/windows_server_2012_standard_eval_kvm_20130510.qcow2.gz ~/images/windows_server_2012_standard_eval_kvm_20130510.qcow2.gz
+
+# Boot on a specific host
+nova boot --image e526642f-9e16-4095-996a-9709dd117bd5 --flavor m1.small --availability-zone nova:controller WinVM
+
+
+# http://docs.openstack.org/grizzly/openstack-network/admin/content/install_quantum-l3.html
+# disables port public ip address and points it to the bridge instead
+ovs-vsctl add-br br-ex
+ovs-vsctl add-port br-ex eth1
+
+
+sudo apt-get install -y phpmyadmin
+
+sudo netstat -ntlp |grep 3306
