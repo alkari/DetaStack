@@ -1,0 +1,26 @@
+FLOATING_RANGE=67.208.156.160/30
+FIXED_RANGE=10.11.12.0/24
+FIXED_NETWORK_SIZE=256
+FLAT_INTERFACE=eth0
+
+ADMIN_PASSWORD=password
+MYSQL_PASSWORD=password
+RABBIT_PASSWORD=password
+SERVICE_PASSWORD=password
+SERVICE_TOKEN=tokentoken
+
+    disable_service n-net
+    enable_service q-svc
+    enable_service q-agt
+    enable_service q-dhcp
+    enable_service q-l3
+    enable_service q-meta
+    enable_service neutron
+    enable_service tempest
+
+    # GRE tunnel configuration
+    Q_PLUGIN=ml2
+    ENABLE_TENANT_TUNNELS=True
+    TENANT_TUNNEL_RANGES=1:1000
+
+

@@ -28,7 +28,7 @@
 ################################################################
 
 # Check if nested virtualization is supported. Use qemu if not.
-apt-get install -y cpu-checker
+sudo apt-get install -y cpu-checker
 kvm-ok
 
 egrep -c '(vmx|svm)' /proc/cpuinfo
@@ -43,7 +43,7 @@ apt-get install sudo -y
 echo "labuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Store IP Address information on reboot. 
-vi /etc/provile
+sudo vi /etc/profile
 
 # Add at the bottom of /etc/profile
 if [ -n "$PS1" ]; then
@@ -71,11 +71,11 @@ sudo sysctl -p
 sudo service networking restart
 
 # Set hostname
-sudo hostname controller
-sudo -- sh -c "echo controller > /etc/hostname"
+sudo hostname hController
+sudo -- sh -c "echo hController > /etc/hostname"
 
-sudo -- sh -c "echo $PUBLIC_IP controller > /etc/hosts"
-sudo -- sh -c "echo $PRIVATE_IP controller >> /etc/hosts"
+sudo -- sh -c "echo $PUBLIC_IP hController > /etc/hosts"
+sudo -- sh -c "echo $PRIVATE_IP hController >> /etc/hosts"
 
 # IMPORTANT: Reboot after changing host name
 sudo shutdown -r now
@@ -84,7 +84,7 @@ sudo shutdown -r now
 
 
 # 5- Enable the Cloud Archive repository
-sudo -- sh -c " cat >> /etc/apt/sources.list.d/grizzly.list <<EOF
+sudo -- sh -c " cat >> /etc/apt/sources.list.d/havana.list <<EOF
 deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/havana main
 EOF"
 
@@ -93,6 +93,7 @@ sudo apt-get install ubuntu-cloud-keyring
 # Install pgp key
 gpg --keyserver keyserver.ubuntu.com --recv-keys 5EDB1B62EC4926EA
 sudo -- sh -c "gpg --armor --export EC4926EA | apt-key add -"
+###### chmod 600 gpg: WARNING: unsafe ownership on configuration file `/home/default/.gnupg/gpg.conf'
 
 
 # 6 - Update all
@@ -359,8 +360,8 @@ EOF
 ###### VALIDATE AGAINST http://docs.openstack.org/network-admin/admin/content/demo_routers_with_private_networks_installions.html
 
 # Install dependencies
-sudo apt-get install -y openvswitch-switch
-
+# sudo apt-get install -y openvswitch-switch
+sudo apt-get install -y openstack-neutron-openvswitch
 # Install the network service (neutron)
 sudo apt-get install -y neutron-server
 
@@ -379,13 +380,14 @@ mysql -u root -pmysqlpw -e "GRANT ALL ON neutron.* TO 'neutron'@'%' IDENTIFIED B
 # Configure the neutron OVS plugin
 # VALIDATE AGINST http://docs.openstack.org/network-admin/admin/content/ovs_neutron_plugin.html
 
-sudo sed -i "s|# connection = mysql://root:nova@127.0.0.1:3306/ovs_neutron|sql_connection = mysql://neutron:neutronpw@$PRIVATE_IP/neutron?charset=utf8|g"  /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
-sudo sed -i 's/# enable_tunneling = False/enable_tunneling = True/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
 sudo sed -i 's/# Example: tenant_network_type = gre/tenant_network_type = gre/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
-sudo sed -i 's/# tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
-sudo sed -i "s/# local_ip = 10.0.0.3/local_ip = $PUBLIC_IP/g" /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
-sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i 's/# enable_tunneling = False/enable_tunneling = True/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
 # sudo sed -i "s/# Example: tunnel_type = gre/tunnel_type = gre/g" /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i 's/# Example: tunnel_id_ranges = 1:1000/tunnel_id_ranges = 1:1000/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i "s/# local_ip = 10.0.0.3/local_ip = $PUBLIC_IP/g" /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i 's/# Example: tunnel_types = gre/tunnel_types = gre/g' /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i "s/# firewall_driver/firewall_driver/g" /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
+sudo sed -i "s|# connection = mysql://root:nova@127.0.0.1:3306/ovs_neutron|connection = mysql://neutron:neutronpw@$PRIVATE_IP/neutron?charset=utf8|g"  /etc/neutron/plugins/openvswitch/ovs_neutron_plugin.ini
 
 
 # Use the 'admin' credentials to add the neutron service user in keystone
