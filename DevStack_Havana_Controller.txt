@@ -1,0 +1,255 @@
+# Install OpenStack Havana on Ubuntu 12.04 LTS
+#
+# bugtrack al.kari@detacloud.com || @detacloud
+# 2013-11-17
+
+
+################################################################
+# PRE-PREP
+################################################################
+
+
+# Add a user
+adduser labuser
+# Enter: labuserpw
+apt-get install sudo -y
+echo "labuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Store IP Address information on reboot. 
+sudo vi /etc/profile
+
+# Add at the bottom of /etc/profile
+if [ -n "$PS1" ]; then
+	export PUBLIC_IP="$(ifconfig | grep -A 1 'eth0' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+	export PRIVATE_IP="$(ifconfig | grep -A 1 'eth1' | tail -1 | cut -d ':' -f 2 | cut -d ' ' -f 1)"
+fi
+
+
+################################################################
+# User Prep Host
+################################################################
+
+
+# 3 - Install supporting packages
+sudo apt-get install -qqy git curl ntp lvm2
+
+
+# 4 - Synchronize time
+sudo ntpdate -u 129.6.15.30 
+
+
+
+# Set hostname
+sudo hostname hController2
+sudo -- sh -c "echo hController2 > /etc/hostname"
+
+sudo -- sh -c "echo $PUBLIC_IP hController2 > /etc/hosts"
+sudo -- sh -c "echo $PRIVATE_IP hController2 >> /etc/hosts"
+
+# IMPORTANT: Reboot after changing host name
+sudo shutdown -r now
+
+# LOGIN WITH NEW USER: labuser/labuserpw
+
+
+# 5- Enable the Cloud Archive repository
+sudo -- sh -c " cat >> /etc/apt/sources.list.d/havana.list <<EOF
+deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/havana main
+EOF"
+
+sudo apt-get install ubuntu-cloud-keyring
+
+# Install pgp key
+gpg --keyserver keyserver.ubuntu.com --recv-keys 5EDB1B62EC4926EA
+sudo -- sh -c "gpg --armor --export EC4926EA | apt-key add -"
+###### chmod 600 gpg: WARNING: unsafe ownership on configuration file `/home/default/.gnupg/gpg.conf'
+
+
+# 6 - Update all
+sudo apt-get update -y && sudo apt-get upgrade -y
+
+
+####################################################################################
+#				Volume Service (Cinder)
+####################################################################################
+
+# examine partitions
+cat /proc/partitions
+
+# Create the volume group
+sudo pvcreate /dev/xvda2
+sudo vgcreate cinder-volumes /dev/xvda2
+
+# Verify the volume group
+sudo vgdisplay
+
+
+
+####################################################################################
+#				Download DevStack
+####################################################################################
+git clone https://github.com/openstack-dev/devstack.git
+
+
+####################################################################################
+#				Configure DevStack (localrc)
+####################################################################################
+
+cat >> ~/devstack/localrc <<EOF
+#Set HOST_IP
+	HOST_IP=$PUBLIC_IP
+# Public NIC
+	FLAT_INTERFACE=eth0
+# Multi-host configuration
+	MULTI_HOST=1
+# Floating IP range on puplic network
+# Not available for cloud install
+#	FLOATING_RANGE=192.168.12.8/29
+# Private Network used by VMs
+	FIXED_RANGE=10.209.66.32/27
+# Instances network size
+	FIXED_NETWORK_SIZE=32
+# Store log file
+	LOGFILE=/opt/stack/logs/stack.sh.log
+# Store environment variables
+	ADMIN_PASSWORD=adminpw
+	MYSQL_PASSWORD=adminpw
+	RABBIT_PASSWORD=adminpw
+	SERVICE_PASSWORD=adminpw
+	SERVICE_TOKEN=tokentoken
+# Define Queue server for additional hosts
+	RABBIT_HOST=$PRIVATE_IP
+# Select network options
+    disable_service n-net
+    enable_service q-svc
+    enable_service q-agt
+    enable_service q-dhcp
+    enable_service q-l3
+    enable_service q-meta
+    enable_service neutron
+    Q_PLUGIN=ml2
+# Define GRE tunnels	
+    ENABLE_TENANT_TUNNELS=True
+    TENANT_TUNNEL_RANGES=1:1000
+# Select Cinder options
+    enable_service c-sch
+    enable_service c-api
+    enable_service c-vol
+	VOLUME_GROUP="cinder-volumes"
+# Install tempest
+    enable_service tempest
+# Install heat
+    enable_service heat
+# Install ceilometer
+	enable_service ceilometer-acompute ceilometer-acentral ceilometer-collector ceilometer-api
+	enable_service ceilometer-alarm-notifier ceilometer-alarm-evaluator
+EOF
+
+
+
+####################################################################################
+#				Install using DevStack
+####################################################################################
+
+cd devstack && ./stack.sh
+
+####################################################################################
+####################################################################################
+
+
+
+# Create a provider owned network and subnet (admins only, owned by 'neutron')
+MY_PUBLIC_SUBNET_CIDR="67.207.157.0/24"
+echo $MY_PUBLIC_SUBNET_CIDR
+PUBLIC_NET_ID=`neutron net-create public --router:external=True | awk '/ id / { print $4 }'`
+PUBLIC_SUBNET_ID=`neutron subnet-create --name public-subnet $PUBLIC_NET_ID $MY_PUBLIC_SUBNET_CIDR -- --enable_dhcp=False --gateway 67.207.157.1 | awk '/ id / { print $4 }'`
+
+# Switch back to the 'user' credentials
+source ~/credentials/user
+
+# Connect the router to the public network
+neutron router-gateway-set $ROUTER_ID $PUBLIC_NET_ID
+
+# Exmaine details of router
+neutron router-show $ROUTER_ID
+
+# Get instance ID for MyInstance1
+nova show MyInstance1
+INSTANCE_ID=<instance-id>
+
+# Find the port id for instance
+INSTANCE_PORT_ID=`neutron port-list -f csv -c id -- --device_id=$INSTANCE_ID | awk 'END{print};{gsub(/[\"\r]/,"")}'`
+
+# Create a floating IP and attach it to instance
+neutron floatingip-create --port_id=$INSTANCE_PORT_ID $PUBLIC_NET_ID
+
+# Add rules to default security group allowing ping and ssh from external network
+nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
+nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
+
+# Wait for rules to take effect...
+
+# Log into a different instance ( username is 'cirros', password is 'cubswin:)' )
+sudo ip netns exec $NETNS_ID ssh cirros@10.0.0.11
+
+# If you get a 'REMOTE HOST IDENTIFICATION HAS CHANGED' warning from previous command
+sudo ssh-keygen -f "/root/.ssh/known_hosts" -R 10.0.0.11
+
+# Ping instance with floating IP
+ping -c 3 172.16.0.x
+
+
+
+####################################################################################
+####################################################################################
+#				Image Servie (Glance)
+####################################################################################
+####################################################################################
+
+# Download some images
+mkdir ~/images
+wget https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-uec.tar.gz -qO- | tar zxC ~/images
+wget https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img -O ~/images/cirros-0.3.1~pre4-x86_64-disk.img
+#Optional Ubuntu Image
+wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img -O ~/images/precise.qcow2.img
+#Optional Windows Image
+wget http://192.237.168.211/images/windows_server_2012_standard_eval_kvm_20130510.qcow2.gz  -O ~/images/windows_server_2012_standard_eval_kvm_20130510.qcow2.gz
+
+# Use the 'user' credentials
+source ~/credentials/user
+
+# Register a three part image (amazon style, separate kernal and ramdisk)
+KERNEL_ID=`glance image-create --name "cirros-threepart-kernel" --disk-format aki --container-format aki --is-public True --file ~/images/cirros-0.3.0-x86_64-vmlinuz | awk '/ id / { print $4 }'`
+RAMDISK_ID=`glance image-create --name "cirros-threepart-ramdisk" --disk-format ari --container-format ari --is-public True --file ~/images/cirros-0.3.0-x86_64-initrd | awk '/ id / { print $4 }'`
+IMAGE_ID_1=`glance image-create --name "cirros-threepart" --disk-format ami --container-format ami --is-public True --property kernel_id=$KERNEL_ID --property ramdisk_id=$RAMDISK_ID --file ~/images/cirros-0.3.0-x86_64-blank.img | awk '/ id / { print $4 }'`
+
+# Register a qcow2 image
+IMAGE_ID_2=`glance image-create --name "cirros-qcow2" --disk-format qcow2 --container-format bare --is-public True --file ~/images/cirros-0.3.1~pre4-x86_64-disk.img | awk '/ id / { print $4 }'`
+
+# Optional Ubuntu
+UBUNTU_ID=`glance image-create --name "precise-qcow2" --disk-format qcow2 --container-format bare --is-public True --file ~/images/precise.qcow2.img | awk '/ id / { print $4 }'`
+# Optional Windows
+WIN_IMAGE_ID=`gunzip -cd windows_server_2012_standard_eval_kvm_20130510.qcow2.gz | glance image-create --name "Windwos Server 2012 Std eval" --disk-format qcow2 --container-format bare --is-public True | awk '/ id / { print $4 }'`
+
+# Verify the images exist in glance
+glance image-list
+
+# Examine details of images
+glance image-show $IMAGE_ID_1
+glance image-show $IMAGE_ID_2
+# Optional
+glance image-show $UBUNTU_ID
+glance image-show $WINIMAGE_ID
+
+
+######################################################################################################
+######################################################################################################
+#					Appendix
+######################################################################################################
+######################################################################################################
+
+# Disable IP source route verification
+sudo sed -i "s/#net.ipv4.conf.default.rp_filter=1/net.ipv4.conf.default.rp_filter=0/g" /etc/sysctl.conf
+sudo sed -i "s/#net.ipv4.conf.all.rp_filter=1/net.ipv4.conf.all.rp_filter=0/g" /etc/sysctl.conf
+sudo sysctl -p
+sudo service networking restart
